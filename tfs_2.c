@@ -1,4 +1,5 @@
 #include "tfs.h"
+#include <assert.h>
 
 
 /* implementation of assigned functions */
@@ -6,6 +7,60 @@
 
 /* you are welcome to use helper functions of your own */
 
+/* tfs_offset
+ * 
+ * returns the file offset for an active directory entry
+ *
+ * preconditions:
+ * 	(1) the file descriptor is in range
+ *	(2) the directory entry is active
+ *
+ * postconditions:
+ *	there are no changes to the file data structure
+ *
+ * input parameter is a file descriptor
+ *
+ * return value is the file offset when successful or MAX_FILE_SIZE + 1
+ *	when failure
+ */
+
+unsigned int tfs_offset ( unsigned int file_descriptor) {
+	if( !tfs_check_fd_in_range( file_descriptor) ) return (MAX_FILE_SIZE + 1);
+	if( directory[file_descriptor].status == UNUSED) return (MAX_FILE_SIZE + 1 );
+	return (directory[file_descriptor].byte_offset );
+}
+
+
+/* nth_block
+ *
+ * returns the zero-index nth block in the file block list for the descriptor
+ *
+ * input: file descriptor, block counter
+ *
+ * returns: index of nth block or 0 if the desciptor is invalid
+ */
+
+unsigned int nth_block( unsigned int file_descriptor, unsigned int n) {
+	if( !tfs_check_fd_in_range( file_descriptor) ) return 0;
+	if( directory[file_descriptor].status == UNUSED) return 0;
+	if( directory[file_descriptor].first_block == FREE) return 0;
+
+	if( n == 0) return directory[file_descriptor].first_block;	
+
+	unsigned int i;
+	unsigned int block_index = directory[file_descriptor].first_block;
+	
+	for(i = 0; i < n && file_allocation_table[block_index] != LAST_BLOCK; i++) {
+		block_index = file_allocation_table[block_index];
+	}
+
+	// If fewer than n blocks were in the list return 0
+	if(i == n)
+		return block_index;
+	else
+		return 0;
+	
+}
 
 
 /* tfs_delete()
@@ -29,9 +84,16 @@
 
 unsigned int tfs_delete( unsigned int file_descriptor ){
 
-  /* your code here */
+	// Steps:
+	// 1. Check preconditions
+	// 2. Release file blocks
+	// 3. Set entry status to unused	
 
 }
+
+/* tfs_read_ftable()
+ * 
+ * 
 
 
 /* tfs_read()
@@ -71,7 +133,47 @@ unsigned int tfs_read( unsigned int file_descriptor,
                        char *buffer,
                        unsigned int byte_count ){
 
-  /* your code here */
+	// Steps:
+	// 1. Check preconditions and initialize variables
+	assert( tfs_check_fd_in_range(file_descriptor));
+	assert( tfs_check_file_is_open(file_descriptor));
+
+	unsigned int block_offset, updated_byte_count;
+	unsigned char fb, *fb_ptr, *fptr;
+
+	// 3. Iteratively read into buffer for given length, checking for EOF
+	// 4. Set new buffer offset in directory
+	// 5. Return number of bytes read
+
+	// 2. Get address of first byte to write
+	block_offset = tfs_offset(file_descriptor) / BLOCK_SIZE;
+	fb = nth_block( file_descriptor, block_offset);
+	fb_ptr = (char *)(blocks + fb);
+	fptr = fb_ptr + tfs_offset(file_descriptor) % BLOCK_SIZE;
+	
+	// 3. Iteratively read into buffer, adjusting for overflow
+	updated_byte_count = byte_count;
+	for( i = 0; i < updated_byte_count; i++, fptr++) {
+		// If the next write will overflow the block
+		// then move to the next block
+		if(fptr >= fb_ptr + BLOCK_SIZE) {
+			block_offset++;
+			fb = nth_block(file_descriptor, block_offset);
+		
+			// Check for EOF
+			if(fb < FIRST_VALID_BLOCK) {
+				updated_byte_count = i;
+			} else {
+				fb_ptr = (char *)(blocks + fb);
+				fptr = fb_ptr;
+			}
+		}
+
+		// Write from the buffer into the block
+		if(fb >= FIRST_VALID_BLOCK) *fptr = buffer[i];
+	}
+
+
 
 }
 
@@ -121,6 +223,80 @@ unsigned int tfs_write( unsigned int file_descriptor,
                         char *buffer,
                         unsigned int byte_count ){
 
-  /* your code here */
+	// Steps:
+	// 1. Check preconditions and initialize variables
+	assert( tfs_check_fd_in_range(file_descriptor));
+	assert( tfs_check_file_is_open(file_descriptor));
 
+	int i;
+	unsigned char fb, new_block, last_block, *fb_ptr, *fptr;
+	unsigned int offset, block_offset, size, updated_byte_count;
+	
+	// 2. Allocate the necessary amount of blocks so that
+	//	offset + byte_count <= size
+
+	last_block = 0;
+	while(tfs_offset(file_descriptor) + byte_count > tfs_size(file_descriptor)) {
+
+		// Make a new block and append it to the file list
+		new_block = tfs_new_block();
+
+		// If allocation fails try to continue with write on existing blocks
+		if(new_block < FIRST_VALID_BLOCK) break;
+
+		file_allocation_table[new_block] = LAST_BLOCK;	
+
+		if(directory[file_descriptor].first_block == FREE) {
+			directory[file_descriptor].first_block = new_block;
+			last_block = new_block;
+		} else {
+			// Move pointer to end of the file block list
+			if(last_block == 0) {
+				last_block = directory[file_descriptor].first_block;
+				while(file_allocation_table[last_block] != LAST_BLOCK) {
+					last_block = file_allocation_table[last_block];
+				}
+			}
+
+			// Add file block to the end of the list
+			file_allocation_table[last_block] = new_block;
+			last_block = new_block;
+		}
+
+		directory[file_descriptor].size += BLOCK_SIZE;
+	}
+
+	// If allocation failed for a file of size 0 return immediately
+	if(directory[file_descriptor].first_block == FREE) return 0;
+
+	// 3. Get address of first byte to write
+	block_offset = tfs_offset(file_descriptor) / BLOCK_SIZE;
+	fb = nth_block( file_descriptor, block_offset);
+	fb_ptr = (char *)(blocks + fb);
+	fptr = fb_ptr + tfs_offset(file_descriptor) % BLOCK_SIZE;
+	
+	// 4. Iteratively write into buffer, adjusting for overflow
+	updated_byte_count = byte_count;
+	for( i = 0; i < updated_byte_count; i++, fptr++) {
+		// If the next write will overflow the block
+		// then move to the next block
+		if(fptr >= fb_ptr + BLOCK_SIZE) {
+			block_offset++;
+			fb = nth_block(file_descriptor, block_offset);
+		
+			// Check for EOF
+			if(fb < FIRST_VALID_BLOCK) {
+				updated_byte_count = i;
+			} else {
+				fb_ptr = (char *)(blocks + fb);
+				fptr = fb_ptr;
+			}
+		}
+
+		// Write from the buffer into the block
+		if(fb >= FIRST_VALID_BLOCK) *fptr = buffer[i];
+	}
+
+	// 5. Return number of bytes read
+	return updated_byte_count;
 }
