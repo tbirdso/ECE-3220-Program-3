@@ -68,7 +68,7 @@ int main(){
   printf( "fd for creating a file with identical name" );
   printf( " as existing file - %d\n", fd[2] );
   fd[2] = tfs_create( "file3" );
-  fd[4] = tfs_create( "file4" );
+  fd[3] = tfs_create( "file4" );
   fd[4] = tfs_create( "file5" );
   fd[5] = tfs_create( "file6" );
   fd[6] = tfs_create( "file7" );
