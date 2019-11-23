@@ -85,10 +85,36 @@ unsigned int nth_block( unsigned int file_descriptor, unsigned int n) {
 unsigned int tfs_delete( unsigned int file_descriptor ){
 
 	// Steps:
-	// 1. Check preconditions
-	// 2. Release file blocks
-	// 3. Set entry status to unused	
 
+	// 1. Check preconditions and initialize variables
+	if( !tfs_check_fd_in_range(file_descriptor)) return FALSE;
+
+	if(directory[file_descriptor].status == OPEN) {
+		printf("Attempted to delete an open file descriptor!\n");
+		return FALSE;
+	} else if(directory[file_descriptor].status == UNUSED) {
+		printf("Attempted to delete an unused file descriptor.\n");
+		return FALSE;
+	}
+	
+	unsigned char fb, next_fb;
+
+	// 2. Release file blocks
+	fb = nth_block(file_descriptor, 0);
+
+	while(fb != FREE && fb != LAST_BLOCK) {
+		next_fb = file_allocation_table[fb];
+		file_allocation_table[fb] = FREE;
+		fb = next_fb;
+	}
+
+	// 3. Set entry status to unused	
+	directory[file_descriptor].first_block = FREE;
+	directory[file_descriptor].size = 0;
+	directory[file_descriptor].byte_offset = 0;
+	directory[file_descriptor].status = UNUSED;
+	
+	return TRUE;
 }
 
 /* tfs_read_ftable()
