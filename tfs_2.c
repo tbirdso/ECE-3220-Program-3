@@ -334,11 +334,16 @@ unsigned int tfs_write( unsigned int file_descriptor,
 	// 3. Get address of first byte to write
 	block_offset = tfs_offset(file_descriptor) / BLOCK_SIZE;
 	fb = nth_block( file_descriptor, block_offset);
+
+	// if the nth block does not exist then the offset must be at the
+	// end of the file and no more blocks are available to allocate,
+	// so no bytes can be written
+	updated_byte_count = (fb == 0) ? 0 : byte_count;
+
 	fb_ptr = (char *)(blocks + fb);
 	fptr = fb_ptr + tfs_offset(file_descriptor) % BLOCK_SIZE;
 	
 	// 4. Iteratively write into buffer, adjusting for overflow
-	updated_byte_count = byte_count;
 	for( i = 0; i < updated_byte_count; i++, fptr++) {
 		// If the next write will overflow the block
 		// then move to the next block
