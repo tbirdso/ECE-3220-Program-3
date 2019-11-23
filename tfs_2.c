@@ -138,6 +138,7 @@ unsigned int tfs_read( unsigned int file_descriptor,
 	assert( tfs_check_fd_in_range(file_descriptor));
 	assert( tfs_check_file_is_open(file_descriptor));
 
+	int i;
 	unsigned int block_offset, updated_byte_count;
 	unsigned char fb, *fb_ptr, *fptr;
 
@@ -170,11 +171,13 @@ unsigned int tfs_read( unsigned int file_descriptor,
 		}
 
 		// Write from the buffer into the block
-		if(fb >= FIRST_VALID_BLOCK) *fptr = buffer[i];
+		if(fb >= FIRST_VALID_BLOCK) buffer[i] = *fptr;
 	}
 
+	// Move offset to new offset
+	directory[file_descriptor].byte_offset += updated_byte_count;
 
-
+	return updated_byte_count;
 }
 
 /* tfs_write()
@@ -296,6 +299,9 @@ unsigned int tfs_write( unsigned int file_descriptor,
 		// Write from the buffer into the block
 		if(fb >= FIRST_VALID_BLOCK) *fptr = buffer[i];
 	}
+
+	// Move offset to new offset
+	directory[file_descriptor].byte_offset += updated_byte_count;
 
 	// 5. Return number of bytes read
 	return updated_byte_count;
